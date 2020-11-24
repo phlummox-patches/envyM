@@ -1,9 +1,10 @@
+
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE OverloadedStrings          #-}
-------------------------------------------------------------------------------
+
 module Main ( main ) where
-------------------------------------------------------------------------------
+
 import qualified Data.ByteString.Char8 as B8
 import qualified Data.ByteString.Lazy.Char8 as BL8
 import           Data.Int
@@ -16,7 +17,7 @@ import           Test.Hspec
 import           Test.QuickCheck
 import           Test.QuickCheck.Instances ()
 import           Test.QuickCheck.Monadic
-------------------------------------------------------------------------------
+
 data ConnectInfo = ConnectInfo {
       pgHost :: String
     , pgPort :: Word16
@@ -34,31 +35,33 @@ instance Arbitrary ConnectInfo where
       where nonempty = getNonEmpty <$> arbitrary
             nonulls = nonempty `suchThat` (not . ('\NUL' `elem`))
 
-------------------------------------------------------------------------------
+
 -- | Posgtres config
-data PGConfig = PGConfig {
+newtype PGConfig = PGConfig {
     pgConnectInfo :: ConnectInfo -- ^ Connnection Info
   } deriving (Eq)
 
 instance Arbitrary PGConfig where
     arbitrary = PGConfig <$> arbitrary
 
-------------------------------------------------------------------------------
+
 -- | Custom show instance
 instance Show PGConfig where
   show PGConfig {..} = "<PGConfig>"
 
-------------------------------------------------------------------------------
+
 -- | FromEnv Instances, supports popular aeson combinators *and* IO
 -- for dealing with connection pools
 instance FromEnv PGConfig where
-  fromEnv = PGConfig <$> (ConnectInfo <$> envMaybe "PG_HOST" .!= "localhost"
-                                      <*> env "PG_PORT"
-                                      <*> env "PG_USER"
-                                      <*> env "PG_PASS"
-                                      <*> env "PG_DB")
+  fromEnvT =
+    PGConfig <$> (
+      ConnectInfo  <$> envMaybeR "PG_HOST" .!= "localhost"
+                  <*> envParserT "PG_PORT"
+                  <*> envParserT "PG_USER"
+                  <*> envParserT "PG_PASS"
+                  <*> envParserT "PG_DB" )
 
-------------------------------------------------------------------------------
+
 -- | To Environment Instances
 instance ToEnv PGConfig where
   toEnv PGConfig{..} = let ConnectInfo{..} = pgConnectInfo
@@ -70,7 +73,6 @@ instance ToEnv PGConfig where
                                , "PG_DB"   .= pgDB
                                ]
 
-------------------------------------------------------------------------------
 -- | Start tests
 main :: IO ()
 main = hspec $ do
@@ -112,5 +114,7 @@ main = hspec $ do
       \(pgConf::PGConfig) -> monadicIO $ do
         res <- run $ do
                  _ <- setEnvironment' pgConf
-                 decodeEnv
+                 decodeEnvIO
         assert $ res == Right pgConf
+
+
